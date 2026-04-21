@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>API Abuse Detection - Ticket Simulation</title>
+
+    <style>
+        body {
+            font-family: Arial;
+            text-align: center;
+            background: #f4f4f4;
+        }
+
+        button, input {
+            padding: 10px;
+            margin: 5px;
+        }
+
+        .allowed { color: green; }
+        .throttled { color: orange; }
+        .blocked { color: red; }
+
+        #log {
+            margin-top: 20px;
+            max-height: 250px;
+            overflow-y: auto;
+            background: white;
+            padding: 10px;
+            border: 1px solid #ccc;
+        }
+    </style>
+</head>
+
+<body>
+
+<h2>🎟️ Coldplay Ticket Booking Simulation</h2>
+
+<p style="font-size:20px;">
+Tickets Left: <span id="tickets">100</span>
+</p>
+
+<input id="apiKey" placeholder="Enter API Key" />
+
+<br>
+
+<button onclick="bookTicket()">Book Ticket</button>
+<button onclick="botAttack()">Simulate Bot Attack</button>
+
+<hr>
+
+<h3>📊 Request Log</h3>
+
+<div id="log"></div>
+
+<script>
+
+const API_ENDPOINT = "https://1dqsn8rk74.execute-api.ap-southeast-2.amazonaws.com/prod/checkRequest";
+
+let tickets = 100;
+
+function logMessage(msg, type) {
+    const div = document.getElementById("log");
+    const p = document.createElement("p");
+    p.className = type;
+    p.innerText = msg;
+    div.prepend(p);
+}
+
+async function bookTicket() {
+
+    const apiKey = document.getElementById("apiKey").value;
+
+    if (!apiKey) {
+        alert("Enter API Key");
+        return;
+    }
+
+    const res = await fetch(API_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            api_key: apiKey,
+            target_url: "https://jsonplaceholder.typicode.com/posts/1"
+        })
+    });
+
+    const data = await res.json();
+
+    const decision = data.gateway_decision || data.decision;
+
+    // Reduce ticket ONLY if allowed
+    if (decision === "ALLOWED" && tickets > 0) {
+        tickets--;
+        document.getElementById("tickets").innerText = tickets;
+    }
+
+    logMessage(JSON.stringify(data), decision?.toLowerCase() || "allowed");
+}
+
+function botAttack() {
+
+    for (let i = 0; i < 50; i++) {
+        setTimeout(() => {
+            document.getElementById("apiKey").value = "bot_user";
+            bookTicket();
+        }, i * 50);
+    }
+}
+
+</script>
+
+</body>
+</html>

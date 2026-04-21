@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>API Abuse Detection — Live Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #22263a;
+    --border: rgba(255,255,255,0.08);
+    --text: #e2e8f0;
+    --muted: #64748b;
+    --green: #10b981;
+    --amber: #f59e0b;
+    --red: #ef4444;
+    --blue: #3b82f6;
+    --purple: #8b5cf6;
+    --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; min-height: 100vh; }
+
+  /* ── top bar ── */
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 24px; border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .logo { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 15px; }
+  .logo-icon {
+    width: 32px; height: 32px; border-radius: 8px;
+    background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+  }
+  .badge { padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; letter-spacing: .5px; }
+  .badge-live { background: rgba(16,185,129,.15); color: var(--green); border: 1px solid rgba(16,185,129,.3); }
+  .header-right { display: flex; align-items: center; gap: 12px; }
+  #clock { font-size: 12px; color: var(--muted); }
+
+  /* ── layout ── */
+  main { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
+  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+  .grid-3 { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+
+  /* ── cards ── */
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 16px;
+  }
+  .card-title { font-size: 11px; font-weight: 600; letter-spacing: .8px; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+
+  /* ── stat cards ── */
+  .stat-value { font-size: 32px; font-weight: 700; line-height: 1; margin-bottom: 4px; }
+  .stat-sub { font-size: 12px; color: var(--muted); }
+  .stat-green .stat-value { color: var(--green); }
+  .stat-amber .stat-value { color: var(--amber); }
+  .stat-red   .stat-value { color: var(--red); }
+  .stat-blue  .stat-value { color: var(--blue); }
+
+  /* ── ticket meter ── */
+  .ticket-block {
+    display: flex; align-items: center; gap: 16px;
+  }
+  .ticket-count { font-size: 52px; font-weight: 800; color: var(--text); line-height: 1; }
+  .ticket-label { font-size: 12px; color: var(--muted); }
+  .ticket-bar-wrap { flex: 1; }
+  .ticket-bar-bg { height: 10px; background: var(--surface2); border-radius: 5px; overflow: hidden; }
+  .ticket-bar-fill { height: 100%; background: linear-gradient(90deg, #10b981, #3b82f6); border-radius: 5px; transition: width .4s ease; }
+
+  /* ── controls ── */
+  .controls { display: flex; flex-direction: column; gap: 10px; }
+  .input-row { display: flex; gap: 8px; }
+  input[type=text] {
+    flex: 1; background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; color: var(--text); padding: 8px 12px; font-size: 13px;
+    outline: none; transition: border .2s;
+  }
+  input[type=text]:focus { border-color: var(--blue); }
+  .btn {
+    padding: 8px 16px; border-radius: 8px; border: none; font-size: 13px;
+    font-weight: 600; cursor: pointer; transition: all .15s; white-space: nowrap;
+  }
+  .btn:active { transform: scale(.97); }
+  .btn-blue   { background: var(--blue);   color: #fff; }
+  .btn-blue:hover   { background: #2563eb; }
+  .btn-red    { background: var(--red);    color: #fff; }
+  .btn-red:hover    { background: #dc2626; }
+  .btn-green  { background: var(--green);  color: #fff; }
+  .btn-green:hover  { background: #059669; }
+  .btn-gray   { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+  .btn-gray:hover   { background: #2d3250; }
+  .slider-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+  input[type=range] {
+    flex: 1; accent-color: var(--red); height: 4px; cursor: pointer;
+  }
+
+  /* ── score bar ── */
+  .score-display { display: flex; align-items: center; gap: 12px; margin-top: 4px; }
+  .score-bar-bg { flex: 1; height: 8px; background: var(--surface2); border-radius: 4px; overflow: hidden; }
+  .score-bar-fill { height: 100%; border-radius: 4px; transition: all .3s; }
+  .score-val { font-size: 18px; font-weight: 700; min-width: 40px; text-align: right; }
+
+  /* ── decision badge ── */
+  .decision-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 700;
+    letter-spacing: .4px; transition: all .2s;
+  }
+  .pill-ALLOWED   { background: rgba(16,185,129,.15);  color: var(--green); border: 1px solid rgba(16,185,129,.3); }
+  .pill-THROTTLED { background: rgba(245,158,11,.15);  color: var(--amber); border: 1px solid rgba(245,158,11,.3); }
+  .pill-BLOCKED   { background: rgba(239,68,68,.15);   color: var(--red);   border: 1px solid rgba(239,68,68,.3); }
+  .pill-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+  /* ── signal bars ── */
+  .signal-grid { display: grid; gap: 8px; }
+  .signal-row { display: flex; align-items: center; gap: 8px; }
+  .signal-name { font-size: 12px; color: var(--muted); width: 90px; flex-shrink: 0; }
+  .signal-bar-bg { flex: 1; height: 6px; background: var(--surface2); border-radius: 3px; overflow: hidden; }
+  .signal-bar-fill { height: 100%; border-radius: 3px; transition: width .3s; }
+  .signal-val { font-size: 12px; font-weight: 600; width: 28px; text-align: right; }
+
+  /* ── log table ── */
+  .log-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .log-table th {
+    text-align: left; padding: 6px 10px; color: var(--muted);
+    border-bottom: 1px solid var(--border); font-weight: 500;
+    font-size: 11px; letter-spacing: .4px; text-transform: uppercase;
+  }
+  .log-table td { padding: 7px 10px; border-bottom: 1px solid rgba(255,255,255,.03); }
+  .log-table tr:hover td { background: rgba(255,255,255,.02); }
+  .log-wrap { max-height: 260px; overflow-y: auto; }
+  .log-wrap::-webkit-scrollbar { width: 4px; }
+  .log-wrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  /* ── IP table ── */
+  .ip-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,.04); }
+  .ip-row:last-child { border-bottom: none; }
+  .ip-badge { font-size: 11px; font-family: monospace; background: var(--surface2); padding: 3px 7px; border-radius: 5px; }
+  .ip-meta { flex: 1; }
+  .ip-name { font-size: 12px; }
+  .ip-keys { font-size: 11px; color: var(--muted); }
+  .threat-pill { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px; }
+  .threat-low  { background: rgba(16,185,129,.1);  color: var(--green); }
+  .threat-med  { background: rgba(245,158,11,.1);  color: var(--amber); }
+  .threat-high { background: rgba(239,68,68,.1);   color: var(--red); }
+
+  /* ── status bar ── */
+  #status-bar {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    background: var(--surface); border-top: 1px solid var(--border);
+    padding: 8px 24px; display: flex; align-items: center; gap: 16px; font-size: 12px;
+    color: var(--muted); z-index: 100;
+  }
+  #status-msg { color: var(--text); }
+  .dot-pulse { width: 6px; height: 6px; border-radius: 50%; background: var(--green);
+    animation: pulse 2s infinite; display: inline-block; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+  /* ── attack progress ── */
+  #attack-progress { display: none; }
+  .progress-bar { height: 4px; background: var(--surface2); border-radius: 2px; overflow: hidden; margin-top: 6px; }
+  .progress-fill { height: 100%; background: var(--red); border-radius: 2px; width: 0; transition: width .1s; }
+
+  @media (max-width: 900px) {
+    .grid-4, .grid-3 { grid-template-columns: 1fr 1fr; }
+    .grid-2 { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">🛡</div>
+    API Abuse Detection System
+    <span class="badge badge-live">● LIVE</span>
+  </div>
+  <div class="header-right">
+    <span id="clock"></span>
+    <span style="font-size:12px;color:var(--muted)">ap-southeast-2</span>
+  </div>
+</header>
+
+<main>
+
+  <!-- Row 1: Stats -->
+  <div class="grid-4">
+    <div class="card stat-blue">
+      <div class="card-title">Total Requests</div>
+      <div class="stat-value" id="stat-total">0</div>
+      <div class="stat-sub">since session start</div>
+    </div>
+    <div class="card stat-green">
+      <div class="card-title">Allowed</div>
+      <div class="stat-value" id="stat-allowed">0</div>
+      <div class="stat-sub" id="stat-allowed-pct">0%</div>
+    </div>
+    <div class="card stat-amber">
+      <div class="card-title">Throttled</div>
+      <div class="stat-value" id="stat-throttled">0</div>
+      <div class="stat-sub" id="stat-throttled-pct">0%</div>
+    </div>
+    <div class="card stat-red">
+      <div class="card-title">Blocked</div>
+      <div class="stat-value" id="stat-blocked">0</div>
+      <div class="stat-sub" id="stat-blocked-pct">0%</div>
+    </div>
+  </div>
+
+  <!-- Row 2: Tickets + Controls + Score -->
+  <div class="grid-3">
+
+    <!-- Tickets remaining -->
+    <div class="card">
+      <div class="card-title">Coldplay Concert — Tickets Available</div>
+      <div class="ticket-block">
+        <div>
+          <div class="ticket-count" id="tickets">100</div>
+          <div class="ticket-label">of 100 remaining</div>
+        </div>
+        <div class="ticket-bar-wrap">
+          <div class="ticket-bar-bg">
+            <div class="ticket-bar-fill" id="ticket-bar" style="width:100%"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-top:4px;font-size:11px;color:var(--muted)">
+            <span id="tickets-sold-label">0 sold</span>
+            <span id="tickets-blocked-label">0 bot attempts blocked</span>
+          </div>
+        </div>
+      </div>
+      <div style="margin-top:12px;font-size:12px;color:var(--muted)">
+        <span style="color:var(--green)">●</span> Real tickets sold &nbsp;&nbsp;
+        <span style="color:var(--red)">●</span> Bot purchases blocked by gateway
+      </div>
+    </div>
+
+    <!-- Controls -->
+    <div class="card controls">
+      <div class="card-title">Simulate Traffic</div>
+      <div class="input-row">
+        <input type="text" id="apiKey" placeholder="API key (e.g. user-alice)" value="user-alice">
+      </div>
+      <div class="input-row">
+        <button class="btn btn-green" onclick="bookTicket()">🎟 Book Ticket (human)</button>
+        <button class="btn btn-red" onclick="startBotAttack()">🤖 Bot Attack</button>
+      </div>
+      <div class="slider-row">
+        <span>Bot intensity</span>
+        <input type="range" id="botSpeed" min="10" max="200" value="50" step="10">
+        <span id="botSpeedLabel">50 req</span>
+      </div>
+      <div class="slider-row">
+        <span>Key rotation</span>
+        <input type="range" id="keyRotation" min="1" max="10" value="1" step="1">
+        <span id="keyRotLabel">1 key</span>
+      </div>
+      <div id="attack-progress">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted)">
+          <span>Attack in progress…</span><span id="attack-counter">0/0</span>
+        </div>
+        <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+      </div>
+    </div>
+
+    <!-- Live score card -->
+    <div class="card">
+      <div class="card-title">Last Request — Abuse Score</div>
+      <div id="decision-display" style="margin-bottom:10px">
+        <span class="decision-pill pill-ALLOWED"><span class="pill-dot"></span>ALLOWED</span>
+      </div>
+      <div class="score-display">
+        <div class="score-bar-bg">
+          <div class="score-bar-fill" id="score-bar" style="width:0%;background:var(--green)"></div>
+        </div>
+        <div class="score-val" id="score-val" style="color:var(--green)">0</div>
+      </div>
+      <div class="signal-grid" style="margin-top:14px">
+        <div class="signal-row">
+          <span class="signal-name">Burst rate</span>
+          <div class="signal-bar-bg"><div class="signal-bar-fill" id="sig-burst" style="width:0%;background:#ef4444"></div></div>
+          <span class="signal-val" id="sig-burst-val">0</span>
+        </div>
+        <div class="signal-row">
+          <span class="signal-name">Regularity</span>
+          <div class="signal-bar-bg"><div class="signal-bar-fill" id="sig-reg" style="width:0%;background:#f59e0b"></div></div>
+          <span class="signal-val" id="sig-reg-val">0</span>
+        </div>
+        <div class="signal-row">
+          <span class="signal-name">IP keys</span>
+          <div class="signal-bar-bg"><div class="signal-bar-fill" id="sig-ipk" style="width:0%;background:#8b5cf6"></div></div>
+          <span class="signal-val" id="sig-ipk-val">0</span>
+        </div>
+        <div class="signal-row">
+          <span class="signal-name">IP volume</span>
+          <div class="signal-bar-bg"><div class="signal-bar-fill" id="sig-ipv" style="width:0%;background:#3b82f6"></div></div>
+          <span class="signal-val" id="sig-ipv-val">0</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Row 3: Chart + IP Tracker -->
+  <div class="grid-2">
+
+    <!-- Decision timeline chart -->
+    <div class="card">
+      <div class="card-title">Request Decision Timeline</div>
+      <div style="position:relative;height:180px">
+        <canvas id="timelineChart" role="img" aria-label="Timeline of allowed, throttled, and blocked API requests"></canvas>
+      </div>
+    </div>
+
+    <!-- IP Threat Tracker -->
+    <div class="card">
+      <div class="card-title">IP Threat Tracker</div>
+      <div id="ip-list">
+        <div style="color:var(--muted);font-size:12px;padding:8px 0">Waiting for requests…</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Row 4: Request Log -->
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <div class="card-title" style="margin:0">Request Log</div>
+      <button class="btn btn-gray" onclick="clearLog()" style="font-size:11px;padding:4px 10px">Clear</button>
+    </div>
+    <div class="log-wrap">
+      <table class="log-table">
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>API Key</th>
+            <th>IP</th>
+            <th>Score</th>
+            <th>Decision</th>
+            <th>Signals</th>
+          </tr>
+        </thead>
+        <tbody id="log-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+</main>
+
+<div id="status-bar">
+  <span class="dot-pulse"></span>
+  <span id="status-msg">Ready. Enter an API key and book a ticket or launch a bot attack.</span>
+  <span style="margin-left:auto">Gateway: <span style="color:var(--blue)">api.aws.abuse-demo</span></span>
+</div>
+
+<script>
+// ── CONFIG ────────────────────────────────────────────────────
+const API_ENDPOINT = "https://1dqsn8rk74.execute-api.ap-southeast-2.amazonaws.com/prod/checkRequest";
+const DEMO_MODE = false; // set true to run fully offline without hitting AWS
+
+// ── STATE ─────────────────────────────────────────────────────
+let tickets = 100;
+let ticketsSold = 0;
+let ticketsBlocked = 0;
+let stats = { total: 0, allowed: 0, throttled: 0, blocked: 0 };
+let ipTracker = {};
+let chartData = { labels: [], allowed: [], throttled: [], blocked: [] };
+let chart;
+
+// ── CLOCK ─────────────────────────────────────────────────────
+function updateClock() {
+  document.getElementById('clock').textContent = new Date().toLocaleTimeString();
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ── CHART INIT ────────────────────────────────────────────────
+function initChart() {
+  const ctx = document.getElementById('timelineChart').getContext('2d');
+  chart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: chartData.labels,
+      datasets: [
+        { label: 'Allowed',   data: chartData.allowed,   backgroundColor: 'rgba(16,185,129,.7)',  stack: 'a' },
+        { label: 'Throttled', data: chartData.throttled, backgroundColor: 'rgba(245,158,11,.7)', stack: 'a' },
+        { label: 'Blocked',   data: chartData.blocked,   backgroundColor: 'rgba(239,68,68,.7)',   stack: 'a' },
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'top',
+          labels: { color: '#94a3b8', boxWidth: 10, padding: 12, font: { size: 11 } }
+        }
+      },
+      scales: {
+        x: { stacked: true, ticks: { color: '#475569', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,.04)' } },
+        y: { stacked: true, beginAtZero: true, ticks: { color: '#475569', font: { size: 10 }, stepSize: 1 }, grid: { color: 'rgba(255,255,255,.04)' } }
+      }
+    }
+  });
+}
+
+// ── CHART UPDATE ──────────────────────────────────────────────
+let chartBucket = { allowed: 0, throttled: 0, blocked: 0 };
+let chartTick = 0;
+
+function pushChartBucket() {
+  const label = `T${++chartTick}`;
+  chartData.labels.push(label);
+  chartData.allowed.push(chartBucket.allowed);
+  chartData.throttled.push(chartBucket.throttled);
+  chartData.blocked.push(chartBucket.blocked);
+  if (chartData.labels.length > 20) {
+    chartData.labels.shift(); chartData.allowed.shift();
+    chartData.throttled.shift(); chartData.blocked.shift();
+  }
+  chartBucket = { allowed: 0, throttled: 0, blocked: 0 };
+  chart.data.labels = chartData.labels;
+  chart.data.datasets[0].data = chartData.allowed;
+  chart.data.datasets[1].data = chartData.throttled;
+  chart.data.datasets[2].data = chartData.blocked;
+  chart.update('none');
+}
+
+setInterval(pushChartBucket, 2000);
+
+// ── FAKE DEMO API (offline fallback) ──────────────────────────
+// Demo state per key: score + last request timestamp
+let _demoState = {};
+// Demo state per IP: seen keys + request timestamps
+let _demoIPs   = {};
+
+function fakeApiCall(apiKey, isBot) {
+  const now  = Date.now() / 1000;
+  const prev = _demoState[apiKey] || { score: 0, lastTime: now - 30 };
+
+  const timeDiff = now - prev.lastTime;
+
+  // ── Decay first (same logic as Lambda) ──
+  let score = prev.score;
+  if (timeDiff > 30)     score = score * 0.3;
+  else if (timeDiff > 10) score = score * 0.6;
+  else if (timeDiff > 5)  score = score * 0.9;
+
+  // ── Burst signal ──
+  let burst = 0;
+  if      (timeDiff < 1)  burst = 30;
+  else if (timeDiff < 3)  burst = 20;
+  else if (timeDiff < 5)  burst = 10;
+  else if (timeDiff < 10) burst = 3;
+  // human clicking > 10s apart → burst = 0
+
+  // ── Regularity (only for bots, after 5+ requests) ──
+  let reg = 0;
+  if (isBot && (prev.reqCount || 0) >= 5) reg = 18;
+
+  // ── IP signals ──
+  const ip = isBot ? '203.0.113.1' : '203.0.113.99';
+  if (!_demoIPs[ip]) _demoIPs[ip] = { keys: new Set(), times: [] };
+  _demoIPs[ip].keys.add(apiKey);
+  _demoIPs[ip].times = _demoIPs[ip].times.filter(t => t > now - 60);
+  _demoIPs[ip].times.push(now);
+
+  const keyCount = _demoIPs[ip].keys.size;
+  const reqCount = _demoIPs[ip].times.length;
+
+  const ipk = keyCount >= 10 ? 25 : keyCount >= 5 ? 15 : keyCount >= 3 ? 5 : 0;
+  const ipv = reqCount >= 50 ? 20 : reqCount >= 30 ? 12 : reqCount >= 15 ? 5 : 0;
+
+  // ── Final score ──
+  score = Math.min(100, score + burst + reg + ipk + ipv);
+
+  _demoState[apiKey] = { score, lastTime: now, reqCount: (prev.reqCount || 0) + 1 };
+
+  const decision = score >= 75 ? 'BLOCKED' : score >= 45 ? 'THROTTLED' : 'ALLOWED';
+
+  return {
+    decision, gateway_decision: decision,
+    abuse_score: Math.round(score),
+    request_count: (_demoState[apiKey].reqCount),
+    ip,
+    signals: { burst_score: burst, regularity_score: reg, ip_key_score: ipk, ip_volume_score: ipv }
+  };
+}
+
+// ── CORE REQUEST ──────────────────────────────────────────────
+async function sendRequest(apiKey, isBot = false) {
+  let data;
+  if (DEMO_MODE) {
+    await new Promise(r => setTimeout(r, 80 + Math.random() * 120));
+    data = fakeApiCall(apiKey, isBot);
+  } else {
+    const res = await fetch(API_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ api_key: apiKey })
+    });
+    data = await res.json();
+  }
+  return data;
+}
+
+// ── BOOK TICKET (human) ───────────────────────────────────────
+async function bookTicket() {
+  const apiKey = document.getElementById('apiKey').value.trim() || 'user-human';
+  setStatus(`Sending request for key: ${apiKey}…`);
+
+  let data;
+  try { data = await sendRequest(apiKey); }
+  catch(e) { setStatus('Network error — check API endpoint or enable DEMO_MODE.', true); return; }
+
+  const decision = data.gateway_decision || data.decision;
+  processResult(apiKey, decision, data, 'human');
+}
+
+// ── BOT ATTACK ────────────────────────────────────────────────
+async function startBotAttack() {
+  const count   = parseInt(document.getElementById('botSpeed').value);
+  const numKeys = parseInt(document.getElementById('keyRotation').value);
+
+  document.getElementById('attack-progress').style.display = 'block';
+  document.getElementById('attack-counter').textContent = `0/${count}`;
+  document.getElementById('progress-fill').style.width = '0%';
+  setStatus(`🤖 Bot attack started — ${count} requests, ${numKeys} rotating key(s)`);
+
+  const botKeys = [];
+  for (let k = 0; k < numKeys; k++) botKeys.push(`bot-key-${k + 1}`);
+
+  let done = 0;
+  const CONCURRENCY = 5;
+
+  async function worker(i) {
+    const key = botKeys[i % botKeys.length];
+    let data;
+    try { data = await sendRequest(key, true); }
+    catch(e) { data = { decision: 'ERROR', abuse_score: 0, ip: 'unknown', signals: {} }; }
+    const decision = data.gateway_decision || data.decision;
+    processResult(key, decision, data, 'bot');
+    done++;
+    document.getElementById('attack-counter').textContent = `${done}/${count}`;
+    document.getElementById('progress-fill').style.width = `${(done / count * 100).toFixed(0)}%`;
+    if (done === count) {
+      setTimeout(() => {
+        document.getElementById('attack-progress').style.display = 'none';
+        setStatus(`Bot attack complete. ${stats.blocked} total requests blocked.`);
+      }, 600);
+    }
+  }
+
+  // Stagger requests with slight delay to be realistic
+  for (let i = 0; i < count; i++) {
+    setTimeout(() => worker(i), i * (CONCURRENCY * 10));
+  }
+}
+
+// ── PROCESS RESULT ────────────────────────────────────────────
+function processResult(apiKey, decision, data, type) {
+  stats.total++;
+  stats[decision.toLowerCase()] = (stats[decision.toLowerCase()] || 0) + 1;
+
+  // Ticket logic
+  if (decision === 'ALLOWED' && type === 'human' && tickets > 0) {
+    tickets--;
+    ticketsSold++;
+  } else if ((decision === 'BLOCKED' || decision === 'THROTTLED') && type === 'bot') {
+    ticketsBlocked++;
+  }
+
+  // Update all panels
+  updateStats();
+  updateTickets();
+  updateScoreCard(data);
+  updateIPTracker(data.ip || 'unknown', apiKey, data);
+  addLogEntry(apiKey, decision, data);
+
+  // Chart bucket
+  const dk = decision.toLowerCase();
+  if (chartBucket[dk] !== undefined) chartBucket[dk]++;
+}
+
+// ── STAT CARDS ────────────────────────────────────────────────
+function updateStats() {
+  const t = stats.total;
+  document.getElementById('stat-total').textContent     = t;
+  document.getElementById('stat-allowed').textContent   = stats.allowed   || 0;
+  document.getElementById('stat-throttled').textContent = stats.throttled || 0;
+  document.getElementById('stat-blocked').textContent   = stats.blocked   || 0;
+  const pct = v => t ? Math.round((v||0)/t*100)+'%' : '0%';
+  document.getElementById('stat-allowed-pct').textContent   = pct(stats.allowed);
+  document.getElementById('stat-throttled-pct').textContent = pct(stats.throttled);
+  document.getElementById('stat-blocked-pct').textContent   = pct(stats.blocked);
+}
+
+// ── TICKET DISPLAY ────────────────────────────────────────────
+function updateTickets() {
+  document.getElementById('tickets').textContent = tickets;
+  document.getElementById('ticket-bar').style.width = (tickets) + '%';
+  document.getElementById('tickets-sold-label').textContent = ticketsSold + ' sold';
+  document.getElementById('tickets-blocked-label').textContent = ticketsBlocked + ' bot attempts blocked';
+}
+
+// ── SCORE CARD ────────────────────────────────────────────────
+function updateScoreCard(data) {
+  const score    = data.abuse_score || 0;
+  const decision = data.gateway_decision || data.decision || 'ALLOWED';
+  const signals  = data.signals || {};
+
+  const color = decision === 'ALLOWED' ? 'var(--green)' :
+                decision === 'THROTTLED' ? 'var(--amber)' : 'var(--red)';
+
+  document.getElementById('score-bar').style.width    = score + '%';
+  document.getElementById('score-bar').style.background = color;
+  document.getElementById('score-val').textContent    = score;
+  document.getElementById('score-val').style.color    = color;
+
+  document.getElementById('decision-display').innerHTML =
+    `<span class="decision-pill pill-${decision}"><span class="pill-dot"></span>${decision}</span>`;
+
+  const setSig = (id, val, max) => {
+    const pct = Math.min(100, (val / max) * 100);
+    document.getElementById(id).style.width = pct + '%';
+    document.getElementById(id + '-val').textContent = val;
+  };
+  setSig('sig-burst', signals.burst_score  || 0, 35);
+  setSig('sig-reg',   signals.regularity_score || 0, 20);
+  setSig('sig-ipk',   signals.ip_key_score || 0, 25);
+  setSig('sig-ipv',   signals.ip_volume_score || 0, 20);
+}
+
+// ── IP TRACKER ────────────────────────────────────────────────
+function updateIPTracker(ip, apiKey, data) {
+  if (!ipTracker[ip]) {
+    ipTracker[ip] = { keys: new Set(), count: 0, maxScore: 0, lastDecision: 'ALLOWED' };
+  }
+  ipTracker[ip].keys.add(apiKey);
+  ipTracker[ip].count++;
+  ipTracker[ip].maxScore = Math.max(ipTracker[ip].maxScore, data.abuse_score || 0);
+  ipTracker[ip].lastDecision = data.gateway_decision || data.decision || 'ALLOWED';
+
+  const sorted = Object.entries(ipTracker)
+    .sort((a,b) => b[1].maxScore - a[1].maxScore)
+    .slice(0, 6);
+
+  const html = sorted.map(([ip, info]) => {
+    const threat = info.maxScore >= 70 ? 'high' :
+                   info.maxScore >= 35 ? 'med' : 'low';
+    const tLabel = threat === 'high' ? 'HIGH' : threat === 'med' ? 'MED' : 'LOW';
+    return `<div class="ip-row">
+      <span class="ip-badge">${ip}</span>
+      <div class="ip-meta">
+        <div class="ip-name">${info.count} reqs &nbsp;·&nbsp; ${info.keys.size} key${info.keys.size>1?'s':''}</div>
+        <div class="ip-keys">${[...info.keys].slice(0,3).join(', ')}${info.keys.size>3?'…':''}</div>
+      </div>
+      <span class="threat-pill threat-${threat}">${tLabel}</span>
+    </div>`;
+  }).join('');
+
+  document.getElementById('ip-list').innerHTML = html || '<div style="color:var(--muted);font-size:12px">No IPs tracked yet</div>';
+}
+
+// ── LOG ───────────────────────────────────────────────────────
+function addLogEntry(apiKey, decision, data) {
+  const tbody = document.getElementById('log-body');
+  const signals = data.signals || {};
+  const time = new Date().toLocaleTimeString('en-US', { hour12: false });
+  const scoreColor = decision === 'ALLOWED' ? 'var(--green)' :
+                     decision === 'THROTTLED' ? 'var(--amber)' : 'var(--red)';
+  const row = document.createElement('tr');
+  row.innerHTML = `
+    <td style="color:var(--muted)">${time}</td>
+    <td style="font-family:monospace">${apiKey}</td>
+    <td style="font-family:monospace;color:var(--muted)">${data.ip || '—'}</td>
+    <td><span style="color:${scoreColor};font-weight:600">${data.abuse_score || 0}</span></td>
+    <td><span class="decision-pill pill-${decision}" style="font-size:10px;padding:2px 8px">
+      <span class="pill-dot"></span>${decision}
+    </span></td>
+    <td style="color:var(--muted)">
+      B:${signals.burst_score||0} R:${signals.regularity_score||0} K:${signals.ip_key_score||0} V:${signals.ip_volume_score||0}
+    </td>`;
+  tbody.prepend(row);
+  // Cap log at 200 rows
+  while (tbody.rows.length > 200) tbody.deleteRow(tbody.rows.length - 1);
+}
+
+function clearLog() {
+  document.getElementById('log-body').innerHTML = '';
+  stats = { total: 0, allowed: 0, throttled: 0, blocked: 0 };
+  ipTracker = {};
+  updateStats();
+  setStatus('Log cleared.');
+}
+
+// ── STATUS ────────────────────────────────────────────────────
+function setStatus(msg) {
+  document.getElementById('status-msg').textContent = msg;
+}
+
+// ── SLIDER LABELS ─────────────────────────────────────────────
+document.getElementById('botSpeed').addEventListener('input', function() {
+  document.getElementById('botSpeedLabel').textContent = this.value + ' req';
+});
+document.getElementById('keyRotation').addEventListener('input', function() {
+  document.getElementById('keyRotLabel').textContent = this.value + ' key' + (this.value > 1 ? 's' : '');
+});
+
+// ── INIT ──────────────────────────────────────────────────────
+initChart();
+</script>
+</body>
+</html>
